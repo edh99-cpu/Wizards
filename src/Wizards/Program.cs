@@ -39,7 +39,7 @@ internal sealed class Launcher : Form
             TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top,
             Height = 70
         });
-        AddMode(panel, "Solitaire", "Solitaire setup and movement preview");
+        AddMode(panel, "Solitaire", "Solitaire setup, movement and encounters");
         AddMode(panel, "Local hot-seat", "2–6 human players on one computer");
         AddMode(panel, "Play by email", "2–6 human players exchanging saved turns");
         AddMode(panel, "Resume saved game", "Continue a previously saved game");
@@ -48,7 +48,7 @@ internal sealed class Launcher : Form
         panel.Controls.Add(quit);
         panel.Controls.Add(new Label
         {
-            Text = "Development build 0.4 — solitaire movement preview.",
+            Text = "Development build 0.5 — encounter resolution preview.",
             Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 36
         });
         Controls.Add(panel);
