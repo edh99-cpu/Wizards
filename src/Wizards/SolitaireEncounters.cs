@@ -85,6 +85,7 @@ internal sealed partial class TerritorySetup
     private void DrawTask(bool mandatory,string? source=null)
     {
         var s=initialState!;
+        if(TaskSuspended()){Log("Event 31: no Tasks accepted until summons answered.");return;}
         if(s.Rank==0 || s.Rank==4 || dragonbound){Log("Task not assigned at this rank or while Dragonbound.");return;}
         while(s.TaskDeck.Count>0)
         {
@@ -279,7 +280,9 @@ internal sealed partial class TerritorySetup
     }
     private void CommonFolk()
     {
-        switch(HighRoll("Common Folk (§7.301)"))
+        int common=HighRoll("Common Folk (§7.301)");
+        if(ActiveCard(32)!=null && cells.TryGetValue(initialState!.Player,out var commonCell) && commonCell.Encounter=="Common town" && common<4){Log("Event 32: unfavorable town result ignored.");return;}
+        switch(common)
         {case 1:Theft();break;case 2:LosePoints(SingleRoll("Point loss"),false);break;
         case 3:forcedEncounter=true;repeatEncounter="Common Folk";Log("Detained: encounter Common Folk again next turn.");break;
         case 4:DrawTask(false);break;case 5:extraTurns++;Log("One immediate extra turn.");break;case 6:Log("Lodging; no effect.");break;}
@@ -349,6 +352,7 @@ internal sealed partial class TerritorySetup
         try
         {
             var s=initialState!;
+            AnswerSummons(h);
             if(transported){ignoredTaskHex=null;OfferTaskPickup(h);}
             bool metTask=ResolveTaskMarkers(h);
             bool metHigh=revealedWizards.ContainsKey(h);

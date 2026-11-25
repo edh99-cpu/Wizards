@@ -126,6 +126,7 @@ internal sealed partial class TerritorySetup
             "Movement preview (rules 5–8): Roll white and red dice, then click adjacent hexes. Green outlines indicate legal steps. Plains cost 1, woods/mountains 2. Walls cannot be crossed. Swimming takes the full roll and moves only one water space. Click a boat to board (1 point); sailing costs half a point per water hex and cannot occur on the boarding turn. You cannot disembark on a sailing turn. End movement at any time. Click Resolve encounter after movement. Next test turn advances after resolution; unfinished card and Evil effects are not applied.",
             "Movement help");
         tools.Controls.Add(rollMove); tools.Controls.Add(endMove); tools.Controls.Add(nextTest); tools.Controls.Add(movementHelp);
+        eventTravel.Click+=(_,_)=>UseEventTravel();tools.Controls.Add(eventTravel);
         AddEncounterControls(tools);
     }
     private void RefreshMovement()
@@ -135,6 +136,7 @@ internal sealed partial class TerritorySetup
         nextTest.Enabled=initialState!=null && moveStage==MoveStage.Finished && encounterResolved;
         nextTest.Text=initialState?.Day==13 && extraTurns==0 ? "Skip Evil Attack (test only)" : "Next test turn";
         ExpireEvents();
+        eventTravel.Enabled=initialState!=null&&moveStage==MoveStage.Waiting&&!Afflicted&&!Trapped&&lostTurns==0&&!forcedEncounter&&(ActiveCard(30,37)!=null);
         RefreshEncounterControls();
     }
     private string MovementStatus()

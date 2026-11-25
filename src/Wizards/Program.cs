@@ -48,7 +48,7 @@ internal sealed class Launcher : Form
         panel.Controls.Add(quit);
         panel.Controls.Add(new Label
         {
-            Text = "Development build 0.7 — expanded cards and timed Events.",
+            Text = "Development build 0.8 — multi-objective Tasks and extended Events.",
             Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 36
         });
         Controls.Add(panel);

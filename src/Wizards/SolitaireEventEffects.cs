@@ -4,7 +4,7 @@ internal sealed partial class TerritorySetup
     // End is exclusive; "next N days" starts next calendar day.
     private readonly Dictionary<string,(int Start,int End)> timedEvents=new();
     private static bool MovementCard(int n)=>n>=33&&n<=43;
-    private static bool IsAutomatedEvent(int n)=>(n>=2&&n<=8)||(n>=10&&n<=17)||(n>=19&&n<=23)||n is 25 or 27 or 28 or 29 or 34 or 35 or 36 or 38 or 39 or 40 or 41 or 42 or 43;
+    private static bool IsAutomatedEvent(int n)=>(n>=1&&n<=8)||(n>=10&&n<=17)||(n>=19&&n<=23)||n is 25 or 27 or 28 or 29 or 30 or 31 or 32 or 34 or 35 or 36 or 37 or 38 or 39 or 40 or 41 or 42 or 43 or 45 or 46 or 47 or 49;
     private void HoldEvent(string name)
     {
         if(!events.Contains(name))events.Add(name);
@@ -80,6 +80,31 @@ internal sealed partial class TerritorySetup
         if(name!=null&&MessageBox.Show(this,"Use Event 29 to protect all Magical Objects and Gems from theft?","Event 29",MessageBoxButtons.YesNo)==DialogResult.Yes)
         {DiscardEvent(name,"one theft prevented");return true;}
         return false;
+    }
+    private bool TaskSuspended()=>ActiveCard(31)!=null;
+    private void AnswerSummons(Hex h)
+    {
+        if(ActiveCard(31) is string card && cells.TryGetValue(h,out var c) && (c.Encounter=="Riiktal"||(TileKey(c.Tile)=="Common_1"&&c.Code=="Center")||(TileKey(c.Tile)=="Elven_1"&&c.Code=="C3")))
+        {DiscardEvent(card,"summons answered");Log("Tasks may be accepted and fulfilled again.");OfferTaskPickup(h);}
+    }
+    private readonly Button eventTravel=new(){Text="Event travel",AutoSize=true,Enabled=false};
+    private void UseEventTravel()
+    {
+        if(initialState==null||moveStage!=MoveStage.Waiting||Afflicted||Trapped||lostTurns>0||forcedEncounter)return;
+        string? pass=ActiveCard(30), travel=ActiveCard(37);Hex? target=null;
+        if(pass!=null && (travel==null||MessageBox.Show(this,"Use single-use Event 30 for Star Crest instead of Event 37?","Event travel",MessageBoxButtons.YesNo)==DialogResult.Yes))
+        {
+            target=FindEncounter("Star Crest");if(!target.HasValue){Log("Star Crest is not on the board.");return;}DiscardEvent(pass,"Star Crest transportation used");
+        }
+        else if(travel!=null)
+        {
+            target=PickHex(cells.Where(x=>x.Value.Kind!=Terrain.CircleCenter).Select(x=>x.Key).Concat(WaterHexes()),"Event 37 — choose destination");
+        }
+        if(!target.HasValue)return;
+        var s=initialState;var before=s.Player;animalActive=animalTurns>0;whiteDie=0;redDie=0;remainingHalf=0;movedSteps=1;moveStage=MoveStage.Finished;encounterResolved=false;ignoredTaskHex=null;
+        s.Player=target.Value;s.PlayerLocation=ObjectiveLabel(target.Value);occupiedBoat=null;UpdateLair(before,target.Value);OfferTaskPickup(target.Value);
+        string specific=SpecificAt(target.Value);pendingEncounter=specific.Length>0?"Specific encounter: "+specific:"No encounter";
+        moveNote=pendingEncounter+" — Event travel. Click Resolve encounter.";Log("Event travel to "+s.PlayerLocation+".");UpdateStatus();canvas.Invalidate();
     }
     private string ActiveEventRecord()
     {
