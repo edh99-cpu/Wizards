@@ -39,7 +39,7 @@ internal sealed class Launcher : Form
             TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top,
             Height = 70
         });
-        AddMode(panel, "Solitaire", "The original single-player rules (Appendix A)");
+        AddMode(panel, "Solitaire", "Territory setup preview (Appendix A)");
         AddMode(panel, "Local hot-seat", "2–6 human players on one computer");
         AddMode(panel, "Play by email", "2–6 human players exchanging saved turns");
         AddMode(panel, "Resume saved game", "Continue a previously saved game");
@@ -48,7 +48,7 @@ internal sealed class Launcher : Form
         panel.Controls.Add(quit);
         panel.Controls.Add(new Label
         {
-            Text = "Development build — gameplay not yet available.",
+            Text = "Development build 0.2 — solitaire Territory setup preview.",
             Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 36
         });
         Controls.Add(panel);
@@ -61,9 +61,12 @@ internal sealed class Launcher : Form
             Text = title + "\n" + description, Dock = DockStyle.Top,
             Height = 66, Margin = new Padding(0, 5, 0, 5)
         };
-        button.Click += (_, _) => MessageBox.Show(this,
-            title + " is not yet available.", "Wizards",
-            MessageBoxButtons.OK, MessageBoxIcon.Information);
+        button.Click += (_, _) =>
+        {
+            if (title == "Solitaire") TerritorySetup.Open(this);
+            else MessageBox.Show(this, title + " is not yet available.", "Wizards",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
         panel.Controls.Add(button);
     }
 }
