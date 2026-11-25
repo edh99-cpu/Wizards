@@ -48,7 +48,7 @@ internal sealed class Launcher : Form
         panel.Controls.Add(quit);
         panel.Controls.Add(new Label
         {
-            Text = "Development build 0.5 — encounter resolution preview.",
+            Text = "Development build 0.5.1 — encounter testing fix.",
             Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 36
         });
         Controls.Add(panel);
