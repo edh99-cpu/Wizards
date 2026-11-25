@@ -159,7 +159,9 @@ internal sealed partial class TerritorySetup
             foreach (string name in new[] { "Boat_Small","Dragon_Small","Player_"+state.Color })
                 if (!setupImages.ContainsKey(name))
                     setupImages.Add(name,LoadImage(Path.Combine(artworkFolder,name+".png")));
+            BuildMovementMap();
             initialState = state;
+            moveNote = "Setup complete — roll movement.";
             completeSetup.Enabled = false;
             viewRecord.Enabled = true;
             UpdateStatus();
@@ -206,7 +208,7 @@ internal sealed partial class TerritorySetup
             $"Dragon: {s.DragonLocation}\r\nBoats placed: {s.Boats.Count}\r\nTerritories in play: {placed.Count}\r\n\r\n"+
             $"Task deck: {s.TaskDeck.Count}\r\nEvent deck: {s.EventDeck.Count}\r\nWizard deck: {s.WizardDeck.Count}\r\n"+
             $"Gem cards: {s.HiddenGems.Count} assigned secretly to the seven High Wizards\r\n\r\n"+
-            "Setup preview complete. Movement, encounters and saving are not yet enabled." };
+            "Movement preview: "+MovementStatus()+"\r\nEncounters and saving are not yet enabled." };
         form.Controls.Add(text);
         form.ShowDialog(this);
     }
