@@ -217,7 +217,7 @@ internal sealed partial class TerritorySetup
             {error="Riiktal is accessible from a stone with white die 1–3.";return false;}
             cost=remainingHalf;action="Enter circle";return true;
         }
-        cost=Afflicted || c.Kind is Terrain.Woods or Terrain.Mountain?4:2;
+        cost=(Afflicted || (c.Kind is Terrain.Woods or Terrain.Mountain))?4:2;
         return Affordable(cost,out error);
     }
     private bool Affordable(int cost,out string error)
@@ -235,8 +235,8 @@ internal sealed partial class TerritorySetup
         else if(action=="Disembark")occupiedBoat=null;
         else if(cells.ContainsKey(target))occupiedBoat=null;
         var previous=s.Player;
-        if(animal is "Horse" or "Hound" && (action=="Board" && animal=="Horse" || cells.TryGetValue(target,out var animalCell) && (TileKey(animalCell.Tile) is "Magic_1" or "Magic_6" || animalCell.Kind==Terrain.Crest))){animal="";animalTurns=0;}
-        if(cells.TryGetValue(previous,out var previousCell) && previousCell.Kind==Terrain.Crest && !usedCrestReentry){crestReentry=true;}
+        if((animal is "Horse" or "Hound") && ((action=="Board" && animal=="Horse") || (cells.TryGetValue(target,out var animalCell) && ((TileKey(animalCell.Tile) is "Magic_1" or "Magic_6") || animalCell.Kind==Terrain.Crest)))){animal="";animalTurns=0;}
+        if(cells.TryGetValue(previous,out var previousCell) && previousCell.Kind==Terrain.Crest && !usedCrestReentry){crestReentry=true;crestDepartureDay=s.Day;}
         if(cells.TryGetValue(target,out var newCell) && newCell.Kind==Terrain.Crest && crestReentry){crestReentry=false;usedCrestReentry=true;}
         UpdateLair(previous,target);
         s.Player=target;s.PlayerLocation=Describe(target);remainingHalf-=cost;movedSteps++;
@@ -283,6 +283,7 @@ internal sealed partial class TerritorySetup
     {
         if(initialState==null || moveStage!=MoveStage.Finished || !encounterResolved || (initialState.Day>=13 && extraTurns==0))return;
         if(deferredEffects && MessageBox.Show(this,"Some card or special effects are pending. Continue for testing only?", "Encounter preview",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        if(crestReentry && initialState.Day>crestDepartureDay)crestReentry=false;
         if(animalActive && animalTurns>0){animalTurns--;if(animalTurns==0)animal="";}
         animalActive=false;
         if(extraTurns>0){extraTurns--;moveNote="Extra turn — roll movement.";}else{initialState.Day++;moveNote="Test day — roll movement.";}
