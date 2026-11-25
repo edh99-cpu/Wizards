@@ -121,22 +121,24 @@ internal sealed partial class TerritorySetup
         endMove.Click += (_,_)=>FinishMovement("");
         nextTest.Click += (_,_)=>AdvanceTest();
         movementHelp.Click += (_,_)=>MessageBox.Show(this,
-            "Movement preview (rules 5–8): Roll white and red dice, then click adjacent hexes. Green outlines indicate legal steps. Plains cost 1, woods/mountains 2. Walls cannot be crossed. Swimming takes the full roll and moves only one water space. Click a boat to board (1 point); sailing costs half a point per water hex and cannot occur on the boarding turn. You cannot disembark on a sailing turn. End movement at any time. Encounters are detected but not resolved. Next test turn deliberately skips pending effects and is not normal gameplay.",
+            "Movement preview (rules 5–8): Roll white and red dice, then click adjacent hexes. Green outlines indicate legal steps. Plains cost 1, woods/mountains 2. Walls cannot be crossed. Swimming takes the full roll and moves only one water space. Click a boat to board (1 point); sailing costs half a point per water hex and cannot occur on the boarding turn. You cannot disembark on a sailing turn. End movement at any time. Click Resolve encounter after movement. Next test turn advances after resolution; unfinished card and Evil effects are not applied.",
             "Movement help");
         tools.Controls.Add(rollMove); tools.Controls.Add(endMove); tools.Controls.Add(nextTest); tools.Controls.Add(movementHelp);
+        AddEncounterControls(tools);
     }
     private void RefreshMovement()
     {
         rollMove.Enabled=initialState!=null && moveStage==MoveStage.Waiting;
         endMove.Enabled=initialState!=null && moveStage==MoveStage.Moving;
-        nextTest.Enabled=initialState!=null && moveStage==MoveStage.Finished && initialState.Day<14;
+        nextTest.Enabled=initialState!=null && moveStage==MoveStage.Finished && encounterResolved && (initialState.Day<13 || extraTurns>0);
+        RefreshEncounterControls();
     }
     private string MovementStatus()
     {
         var s=initialState!;
         string position=occupiedBoat.HasValue ? "Aboard boat" : cells.ContainsKey(s.Player) ? Describe(s.Player) : "Swimming";
         string dice=moveStage==MoveStage.Waiting ? "Roll movement" : $"White {whiteDie} | Red {redDie} | Remaining {remainingHalf/2.0:0.#}";
-        return $"Day {s.Day} | {position} | {dice} | {moveNote}";
+        return $"Day {s.Day} | {position} | {dice} | {(Afflicted?(dragonbound?"Dragonbound | ":"Demon Dazed | "):"")}{moveNote}";
     }
     private string Describe(Hex h)=>cells.TryGetValue(h,out var c)?TileLabel(c.Tile)+" "+c.Code+" ("+c.Kind+")":"Water";
     private void StartMovement()
@@ -144,7 +146,19 @@ internal sealed partial class TerritorySetup
         if(initialState==null || moveStage!=MoveStage.Waiting)return;
         if(cells.Count==0)BuildMovementMap();
         whiteDie=Die(); redDie=Die(); remainingHalf=2*whiteDie; movedSteps=0; boarded=false; sailed=false;
-        pendingEncounter=""; moveStage=MoveStage.Moving;
+        pendingEncounter=""; encounterResolved=false; moveStage=MoveStage.Moving;
+        animalActive=animalTurns>0;
+        Log($"Movement dice: white {whiteDie}, red {redDie}.");
+        if(lostTurns>0 || fortnightTrap || (escapeTrap && whiteDie<5))
+        {
+            if(lostTurns>0)lostTurns--;
+            pendingEncounter="No encounter";remainingHalf=0;moveStage=MoveStage.Finished;
+            moveNote="Movement lost due to trap or lost turn; resolve end of turn.";UpdateStatus();canvas.Invalidate();return;
+        }
+        if(escapeTrap){escapeTrap=false;Log("Trap escaped; move immediately with freeing roll.");}
+        if(forcedEncounter){forcedEncounter=false;pendingEncounter="Forced encounter";remainingHalf=0;moveStage=MoveStage.Finished;moveNote="Required repeat encounter; click Resolve encounter.";UpdateStatus();canvas.Invalidate();return;}
+        if(animal=="Horse" && !Afflicted)remainingHalf+=8;
+        if(animal=="Hound" && !Afflicted && !occupiedBoat.HasValue)remainingHalf+=2;
         moveNote="Click an adjacent green hex, or End movement.";
         UpdateStatus();canvas.Invalidate();
     }
@@ -178,7 +192,7 @@ internal sealed partial class TerritorySetup
             else
             {
                 if(boarded){error="Cannot sail on the turn you board a boat.";return false;}
-                cost=1;action="Sail";return Affordable(cost,out error);
+                cost=dragonbound?4:demonDazed||demons.Contains(s.Player)?2:1;action="Sail";return Affordable(cost,out error);
             }
         }
         else if(!toLand)
@@ -190,7 +204,8 @@ internal sealed partial class TerritorySetup
         }
         else action="Walk";
 
-        if(c!.Kind==Terrain.Crest){error="Star Crest requires a task, event or transport; not yet implemented.";return false;}
+        if(dragonbound && c!.Encounter=="High Hollow"){error="Dragonbound players cannot enter High Hollow.";return false;}
+        if(c!.Kind==Terrain.Crest && (dragonbound || !crestReentry)){error="Star Crest requires authorization or permitted re-entry.";return false;}
         if(c.Kind==Terrain.Stone)
         {
             if(movedSteps!=0 || whiteDie!=c.Stone){error=$"Entering this stone requires an adjacent starting position and white die {c.Stone}.";return false;}
@@ -202,7 +217,7 @@ internal sealed partial class TerritorySetup
             {error="Riiktal is accessible from a stone with white die 1–3.";return false;}
             cost=remainingHalf;action="Enter circle";return true;
         }
-        cost=c.Kind is Terrain.Woods or Terrain.Mountain?4:2;
+        cost=Afflicted || c.Kind is Terrain.Woods or Terrain.Mountain?4:2;
         return Affordable(cost,out error);
     }
     private bool Affordable(int cost,out string error)
@@ -219,6 +234,11 @@ internal sealed partial class TerritorySetup
         else if(action=="Sail"){s.Boats[occupiedBoat!.Value]=target;sailed=true;}
         else if(action=="Disembark")occupiedBoat=null;
         else if(cells.ContainsKey(target))occupiedBoat=null;
+        var previous=s.Player;
+        if(animal is "Horse" or "Hound" && (action=="Board" && animal=="Horse" || cells.TryGetValue(target,out var animalCell) && (TileKey(animalCell.Tile) is "Magic_1" or "Magic_6" || animalCell.Kind==Terrain.Crest))){animal="";animalTurns=0;}
+        if(cells.TryGetValue(previous,out var previousCell) && previousCell.Kind==Terrain.Crest && !usedCrestReentry){crestReentry=true;}
+        if(cells.TryGetValue(target,out var newCell) && newCell.Kind==Terrain.Crest && crestReentry){crestReentry=false;usedCrestReentry=true;}
+        UpdateLair(previous,target);
         s.Player=target;s.PlayerLocation=Describe(target);remainingHalf-=cost;movedSteps++;
         moveNote=action+" → "+Describe(target);
         // A Dragon away from its lair returns when the player enters the lair (8.421).
@@ -233,13 +253,15 @@ internal sealed partial class TerritorySetup
     private string SpecificAt(Hex h)
     {
         var list=new List<string>();
+        if(revealedWizards.ContainsKey(h))list.Add("High Wizard");
         if(cells.TryGetValue(h,out var c) && c.Encounter.Length>0)list.Add(c.Encounter);
+        if(demons.Contains(h))list.Add("Demons");
         if(initialState!.Dragon==h && !list.Contains("Dragon"))list.Add("Dragon");
         return string.Join(" then ",list);
     }
     private bool RandomEligible(Hex h)
     {
-        if(!cells.TryGetValue(h,out var c))return false;
+        if(dragonbound || Trapped || demons.Contains(h) || revealedWizards.ContainsKey(h) || !cells.TryGetValue(h,out var c))return false;
         string key=TileKey(c.Tile);
         return c.Kind is not (Terrain.Stone or Terrain.CircleCenter)
             && key is not ("Magic_5" or "Magic_6")
@@ -254,16 +276,18 @@ internal sealed partial class TerritorySetup
         pendingEncounter=specific.Length>0?"Specific encounter: "+specific :
             redDie<=3 && RandomEligible(initialState.Player)?"Random encounter":"No encounter";
         remainingHalf=0;moveStage=MoveStage.Finished;
-        moveNote=pendingEncounter+(pendingEncounter=="No encounter"?". Movement complete.":". Resolution not implemented.");
+        moveNote=pendingEncounter+". Click Resolve encounter.";
         UpdateStatus();canvas.Invalidate();
     }
     private void AdvanceTest()
     {
-        if(initialState==null || moveStage!=MoveStage.Finished || initialState.Day>=14)return;
-        if(MessageBox.Show(this,"Advance a TEST day without resolving encounters, Dragon movement, or Evil effects? This is not a legal completed game turn.",
-            "Movement testing only",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
-        initialState.Day++;moveStage=MoveStage.Waiting;moveNote="Test day — roll movement.";
-        pendingEncounter="";UpdateStatus();canvas.Invalidate();
+        if(initialState==null || moveStage!=MoveStage.Finished || !encounterResolved || (initialState.Day>=13 && extraTurns==0))return;
+        if(deferredEffects && MessageBox.Show(this,"Some card or special effects are pending. Continue for testing only?", "Encounter preview",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        if(animalActive && animalTurns>0){animalTurns--;if(animalTurns==0)animal="";}
+        animalActive=false;
+        if(extraTurns>0){extraTurns--;moveNote="Extra turn — roll movement.";}else{initialState.Day++;moveNote="Test day — roll movement.";}
+        if(lairDeadline==initialState.Day && !dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound after remaining in the lair.");}
+        moveStage=MoveStage.Waiting;encounterResolved=false;pendingEncounter="";UpdateStatus();canvas.Invalidate();
     }
     private void DrawMovementHints(Graphics g)
     {
