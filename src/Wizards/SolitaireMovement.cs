@@ -149,7 +149,7 @@ internal sealed partial class TerritorySetup
         if(initialState==null || moveStage!=MoveStage.Waiting)return;
         if(cells.Count==0)BuildMovementMap();
         whiteDie=Die(); redDie=Die(); remainingHalf=2*whiteDie; movedSteps=0; boarded=false; sailed=false;
-        pendingEncounter=""; encounterResolved=false; moveStage=MoveStage.Moving;
+        pendingEncounter=""; encounterResolved=false; ignoredTaskHex=null; moveStage=MoveStage.Moving;
         animalActive=animalTurns>0;
         Log($"Movement dice: white {whiteDie}, red {redDie}.");
         if(lostTurns>0 || fortnightTrap || (escapeTrap && whiteDie<5))
@@ -208,7 +208,7 @@ internal sealed partial class TerritorySetup
         else action="Walk";
 
         if(dragonbound && c!.Encounter=="High Hollow"){error="Dragonbound players cannot enter High Hollow.";return false;}
-        if(c!.Kind==Terrain.Crest && (dragonbound || !crestReentry)){error="Star Crest requires authorization or permitted re-entry.";return false;}
+        if(c!.Kind==Terrain.Crest && (dragonbound || (!crestReentry&&!TaskAuthorizesCrest(target)))){error="Star Crest requires authorization or permitted re-entry.";return false;}
         if(c.Kind==Terrain.Stone)
         {
             if(movedSteps!=0 || whiteDie!=c.Stone){error=$"Entering this stone requires an adjacent starting position and white die {c.Stone}.";return false;}
@@ -248,6 +248,8 @@ internal sealed partial class TerritorySetup
         if(cells.TryGetValue(target,out var cell) && TileKey(cell.Tile)=="Magic_6" &&
             (!cells.TryGetValue(s.Dragon,out var dragonCell) || TileKey(dragonCell.Tile)!="Magic_6"))
             (s.Dragon,s.DragonLocation)=RandomSpace(cell.Tile);
+        ignoredTaskHex=null;
+        OfferTaskPickup(target);
         string specific=SpecificAt(target);
         if(specific.Length>0)FinishMovement(specific);
         else if(remainingHalf==0)FinishMovement("");
@@ -256,6 +258,7 @@ internal sealed partial class TerritorySetup
     private string SpecificAt(Hex h)
     {
         var list=new List<string>();
+        if(TaskAt(h))list.Add("Task Marker");
         if(revealedWizards.ContainsKey(h))list.Add("High Wizard");
         if(cells.TryGetValue(h,out var c) && c.Encounter.Length>0)list.Add(c.Encounter);
         if(demons.Contains(h))list.Add("Demons");
@@ -264,7 +267,7 @@ internal sealed partial class TerritorySetup
     }
     private bool RandomEligible(Hex h)
     {
-        if(dragonbound || Trapped || demons.Contains(h) || revealedWizards.ContainsKey(h) || !cells.TryGetValue(h,out var c))return false;
+        if(dragonbound || Trapped || TaskAt(h) || demons.Contains(h) || revealedWizards.ContainsKey(h) || !cells.TryGetValue(h,out var c))return false;
         string key=TileKey(c.Tile);
         return c.Kind is not (Terrain.Stone or Terrain.CircleCenter)
             && key is not ("Magic_5" or "Magic_6")
