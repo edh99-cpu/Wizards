@@ -39,7 +39,7 @@ internal sealed class Launcher : Form
             TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top,
             Height = 70
         });
-        AddMode(panel, "Solitaire", "Territory setup preview (Appendix A)");
+        AddMode(panel, "Solitaire", "Initial game setup (Appendix A)");
         AddMode(panel, "Local hot-seat", "2–6 human players on one computer");
         AddMode(panel, "Play by email", "2–6 human players exchanging saved turns");
         AddMode(panel, "Resume saved game", "Continue a previously saved game");
@@ -48,7 +48,7 @@ internal sealed class Launcher : Form
         panel.Controls.Add(quit);
         panel.Controls.Add(new Label
         {
-            Text = "Development build 0.2 — solitaire Territory setup preview.",
+            Text = "Development build 0.3 — solitaire initial game setup.",
             Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter, Height = 36
         });
         Controls.Add(panel);
