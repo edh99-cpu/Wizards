@@ -202,13 +202,13 @@ internal sealed partial class TerritorySetup
         var text = new TextBox { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical,
             Font = new Font("Segoe UI",11), BackColor = Color.White,
             Text = $"DAY {s.Day}    |    Completion: {s.Completion}    |    Thwart: {s.ThwartPosition}\r\n\r\n"+
-            $"Player: {s.Color}\r\nStarting space: {s.PlayerLocation}\r\nMagical Order: {s.Order} (Rank {s.Rank})\r\n"+
+            $"Player: {s.Color}\r\nCurrent space: {s.PlayerLocation}\r\nMagical Order: {s.Order} (Rank {s.Rank})\r\n"+
             $"Knowledge: {s.Knowledge}    Perception: {s.Perception}    Power: {s.Power}\r\n"+
-            "Tasks: None    Events: None    Gems: None    Animal: None\r\n\r\n"+
+            EncounterRecord()+"\r\n"+
             $"Dragon: {s.DragonLocation}\r\nBoats placed: {s.Boats.Count}\r\nTerritories in play: {placed.Count}\r\n\r\n"+
             $"Task deck: {s.TaskDeck.Count}\r\nEvent deck: {s.EventDeck.Count}\r\nWizard deck: {s.WizardDeck.Count}\r\n"+
             $"Gem cards: {s.HiddenGems.Count} assigned secretly to the seven High Wizards\r\n\r\n"+
-            "Movement preview: "+MovementStatus()+"\r\nEncounters and saving are not yet enabled." };
+            "Encounter preview: "+MovementStatus()+"\r\nCard effects, Evil Attacks, spells and saving are incomplete." };
         form.Controls.Add(text);
         form.ShowDialog(this);
     }
