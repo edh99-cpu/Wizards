@@ -292,6 +292,7 @@ internal sealed partial class TerritorySetup : Form
                 owner.DrawTile(g, owner.revealed ? owner.fronts[p.Name] : owner.back, p.Center, p.Rotation);
             owner.DrawMovementHints(g);
             owner.DrawInitialPieces(g);
+            owner.DrawEncounterMarkers(g);
             if (hover is Hex h && !owner.revealed && owner.deck.Count > 0)
             {
                 bool valid = owner.Valid(h);
