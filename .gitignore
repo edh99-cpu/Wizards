@@ -1,0 +1,8 @@
+bin/
+obj/
+publish/
+.vs/
+*.user
+*.vmod
+*.pdf
+assets/
