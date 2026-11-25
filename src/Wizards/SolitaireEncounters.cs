@@ -12,6 +12,9 @@ internal sealed partial class TerritorySetup
     private readonly Dictionary<Hex,List<string>> revealedWizards = new();
     private bool encounterResolved, deferredEffects;
     private bool demonDazed, dragonbound, escapeTrap, fortnightTrap, forcedEncounter;
+    private string repeatEncounter = "";
+    private int? testRoll;
+    private readonly Button testEncounter = new() { Text = "Test encounter…", AutoSize = true, Enabled = false };
     private int lostTurns, extraTurns, lastPromotionDay = -100;
     private string animal = "";
     private int animalTurns;
@@ -29,11 +32,13 @@ internal sealed partial class TerritorySetup
         resolveEncounter.Click += (_,_) => ResolvePending();
         encounterHistory.Click += (_,_) => ShowEncounterLog();
         inspectCards.Click += (_,_) => ShowDrawnCards();
-        tools.Controls.Add(resolveEncounter); tools.Controls.Add(encounterHistory); tools.Controls.Add(inspectCards);
+        testEncounter.Click += (_,_) => ChooseTestEncounter();
+        tools.Controls.Add(resolveEncounter); tools.Controls.Add(encounterHistory); tools.Controls.Add(inspectCards); tools.Controls.Add(testEncounter);
     }
     private void RefreshEncounterControls()
     {
-        resolveEncounter.Enabled = initialState != null && moveStage == MoveStage.Finished && !encounterResolved && pendingEncounter != "No encounter";
+        resolveEncounter.Enabled = initialState != null && moveStage == MoveStage.Finished && !encounterResolved;
+        testEncounter.Enabled = initialState != null && moveStage == MoveStage.Finished && !encounterResolved;
         encounterHistory.Enabled = encounterLog.Count > 0;
         inspectCards.Enabled = tasks.Count + events.Count > 0;
     }
@@ -41,6 +46,7 @@ internal sealed partial class TerritorySetup
     private int HighRoll(string label, int? forced = null)
     {
         int a=Die(), b=Die(), result=Math.Max(a,b);
+        if(testRoll.HasValue){result=testRoll.Value;testRoll=null;Log($"TEST {label}: selected result {result}.");return result;}
         if(forced.HasValue) result=forced.Value;
         Log($"{label}: rolled {a}, {b}; higher die = {result}.");
         return result;
@@ -217,6 +223,7 @@ internal sealed partial class TerritorySetup
         string card=drawn[^1];
         bool high=WizardNames.Any(n=>card=="Wizard_Card_"+n);
         Log("Wizard card: "+card.Replace("Wizard_Card_","").Replace('_',' '));
+        if(onlyHigh&&!high){ReturnWizardCards(drawn);Log("No High Wizard available in the draw deck.");return;}
         if(high&&revealLocation)
         {
             Hex h=RandomLand();
@@ -246,7 +253,7 @@ internal sealed partial class TerritorySetup
     {
         switch(HighRoll("Common Folk (§7.301)"))
         {case 1:Theft();break;case 2:LosePoints(SingleRoll("Point loss"),false);break;
-        case 3:forcedEncounter=true;Log("Detained: encounter Common Folk again next turn.");break;
+        case 3:forcedEncounter=true;repeatEncounter="Common Folk";Log("Detained: encounter Common Folk again next turn.");break;
         case 4:DrawTask(false);break;case 5:extraTurns++;Log("One immediate extra turn.");break;case 6:Log("Lodging; no effect.");break;}
     }
     private void DemonEncounter()
@@ -279,7 +286,7 @@ internal sealed partial class TerritorySetup
         {case 1:dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound; held Events discarded.");break;
         case 2:lostTurns+=SingleRoll("Turns lost");break;
         case 3:Theft();break;case 4:LosePoints(2*SingleRoll("Point loss"),true);break;
-        case 5:if(s.Player==LairCenter()){forcedEncounter=true;Log("Must encounter Dragon again next turn.");}else Transport(LairCenter());break;
+        case 5:if(s.Player==LairCenter()){forcedEncounter=true;repeatEncounter="Dragon";Log("Must encounter Dragon again next turn.");}else Transport(LairCenter());break;
         case 6:Log("Unaffected by Dragon.");break;}
     }
     private void TrapEncounter()
@@ -300,7 +307,7 @@ internal sealed partial class TerritorySetup
             var s=initialState!;s.Dragon=s.Player;s.DragonLocation=Describe(s.Player);DragonEncounter();return;
         }
         if(Afflicted){Log("Animal will not approach an afflicted player.");return;}
-        animal="";animalTurns=0;
+        animal="";animalTurns=0;animalActive=false;
         if(result==6){DrawTask(false);return;}
         animal=result==2?"Unicorn":result==3?"Winged Horse":result==4?"Horse":"Hound";
         animalTurns=result-1;Log($"{animal} available for {animalTurns} turn(s).");
@@ -321,14 +328,9 @@ internal sealed partial class TerritorySetup
                 {
                     case "Common town":CommonFolk();break;
                     case "Elven dwelling":
-                        int elves=HighRoll("Elven dwelling (§7.39)");
-                        if(elves<=4)Award(SingleRoll("Points")*(elves<=2?2:1));else Log("Elves elude you.");break;
+                        ElvenGift();break;
                     case "Hamdrel":
-                        if(Afflicted){Heal();break;}
-                        int gift=HighRoll("Hamdrel (§7.353, corrected)");
-                        if(s.Rank is 0 or 4)
-                        {if(gift<=2)WizardDraw(true);else if(gift<=4)WizardDraw(false);else WizardDraw(true,true);}
-                        else {if(gift<=2)Award(2*SingleRoll("Gift points"));else if(gift<=4)DrawTask(false);else WizardDraw(true,true);}break;
+                        HamdrelGift();break;
                     case "Master Sorcerer":Mentor("Sorcerers",TileLabel(c.Tile));break;
                     case "Riiktal":Mentor("Druids","Riiktal");break;
                     case "Shrineheart Abbey":
@@ -362,6 +364,11 @@ internal sealed partial class TerritorySetup
         encounterResolved=true;encounterDepth=0;
         Log(pendingEncounter);
         if(pendingEncounter.StartsWith("Specific encounter"))ResolveSpecific(initialState.Player);
+        else if(pendingEncounter=="Forced encounter")
+        {
+            var repeat=repeatEncounter;repeatEncounter="";
+            if(repeat=="Common Folk")CommonFolk();else if(repeat=="Dragon")DragonEncounter();
+        }
         else if(pendingEncounter=="Random encounter"&&!dragonbound&&!Trapped)
         {
             switch(HighRoll("Random encounter (§8)"))
@@ -375,6 +382,54 @@ internal sealed partial class TerritorySetup
         }
         moveNote=deferredEffects?"Encounter processed; some effects pending. See log/cards.":"Encounter resolved. See log.";
         UpdateStatus();canvas.Invalidate();ShowEncounterLog();
+    }
+    private void ChooseTestEncounter()
+    {
+        if(initialState==null || moveStage!=MoveStage.Finished || encounterResolved)return;
+        using var f=new Form { Text="Test encounter — changes current preview game",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(430,200),FormBorderStyle=FormBorderStyle.FixedDialog };
+        var kind=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Left=15,Top=15,Width=395};
+        kind.Items.AddRange(new object[]{"Random encounter","Common Folk","Demons","Dragon","Trap","Animal","High Wizard (random card)","Hamdrel gift","Elven dwelling","Event card","Mentor: Wizards","Mentor: Sorcerers","Mentor: Druids"});kind.SelectedIndex=0;
+        var roll=new NumericUpDown {Minimum=1,Maximum=6,Value=6,Left=15,Top=60,Width=75};
+        f.Controls.Add(kind);f.Controls.Add(roll);f.Controls.Add(new Label {Left=100,Top=64,AutoSize=true,Text="Force first table result (1–6)"});
+        f.Controls.Add(new Label {Left=15,Top=100,Width=395,Height=40,Text="Testing only: this replaces the pending encounter, even if the location would not normally allow it."});
+        var ok=new Button {Text="Run test encounter",Left=15,Top=150,Width=395,DialogResult=DialogResult.OK};f.Controls.Add(ok);f.AcceptButton=ok;
+        if(f.ShowDialog(this)!=DialogResult.OK)return;
+        encounterResolved=true;deferredEffects=true;encounterDepth=0;testRoll=(int)roll.Value;
+        Log("TEST ONLY — replaced "+pendingEncounter+" with "+kind.SelectedItem+".");
+        try
+        {
+            switch((string)kind.SelectedItem!)
+            {
+                case "Random encounter":switch(HighRoll("Random encounter")){case 1:DemonEncounter();break;case 2:TrapEncounter();break;case 3:AnimalEncounter();break;case 4:DrawEvent();break;case 5:CommonFolk();break;case 6:WizardDraw(false);break;}break;
+                case "Common Folk":CommonFolk();break;
+                case "Demons":DemonEncounter();break;
+                case "Dragon":DragonEncounter();break;
+                case "Trap":TrapEncounter();break;
+                case "Animal":AnimalEncounter();break;
+                case "High Wizard (random card)":WizardDraw(false);break;
+                case "Hamdrel gift":HamdrelGift();break;
+                case "Elven dwelling":ElvenGift();break;
+                case "Event card":DrawEvent();break;
+                case "Mentor: Wizards":Mentor("Wizards","High Wizard");break;
+                case "Mentor: Sorcerers":Mentor("Sorcerers","Master Sorcerer");break;
+                case "Mentor: Druids":Mentor("Druids","Riiktal");break;
+            }
+        }
+        finally{testRoll=null;}
+        moveNote="Test encounter processed. See log.";UpdateStatus();canvas.Invalidate();ShowEncounterLog();
+    }
+    private void ElvenGift()
+    {
+        int elves=HighRoll("Elven dwelling (§7.39)");
+        if(elves<=4)Award(SingleRoll("Points")*(elves<=2?2:1));else Log("Elves elude you.");
+    }
+    private void HamdrelGift()
+    {
+        var s=initialState!;
+        if(Afflicted){Heal();return;}
+        int gift=HighRoll("Hamdrel (§7.353, corrected)");
+        if(s.Rank is 0 or 4){if(gift<=2)WizardDraw(true);else if(gift<=4)WizardDraw(false);else WizardDraw(true,true);}
+        else {if(gift<=2)Award(2*SingleRoll("Gift points"));else if(gift<=4)DrawTask(false);else WizardDraw(true,true);}
     }
     private void DrawEncounterMarkers(Graphics g)
     {
