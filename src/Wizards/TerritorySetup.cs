@@ -120,6 +120,7 @@ internal sealed partial class TerritorySetup : Form
         viewRecord.Click += (_, _) => ShowInitialRecord();
         tools.Controls.Add(completeSetup);
         tools.Controls.Add(viewRecord);
+        AddMovementControls(tools);
         tools.Controls.Add(MakeButton("Return to menu", Close));
         tools.Controls.Add(status);
         canvas = new BoardCanvas(this);
@@ -162,7 +163,8 @@ internal sealed partial class TerritorySetup : Form
         rotate.Enabled = deck.Count > 0 && !revealed;
         undo.Enabled = placed.Count > 0 && !revealed;
         completeSetup.Enabled = revealed && initialState == null;
-        status.Text = initialState != null ? $"Day 1 | {initialState.Color} | Rank 0 | {initialState.Boats.Count} boats | Setup complete — movement not yet enabled."
+        RefreshMovement();
+        status.Text = initialState != null ? MovementStatus()
             : revealed ? "Territories revealed — click Complete setup to initialize the game."
             : $"Placed: {placed.Count}   Remaining: {deck.Count}   Rotation: {rotation * 60}°   |   Click a valid hex to place.";
     }
@@ -272,7 +274,12 @@ internal sealed partial class TerritorySetup : Form
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (e.Button == MouseButtons.Left) owner.Place(Nearest(e.X / ScaleFactor, e.Y / ScaleFactor));
+            if (e.Button == MouseButtons.Left)
+            {
+                var h = Nearest(e.X / ScaleFactor, e.Y / ScaleFactor);
+                if (owner.initialState != null) owner.MoveClick(h);
+                else owner.Place(h);
+            }
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -283,6 +290,7 @@ internal sealed partial class TerritorySetup : Form
             g.DrawImage(owner.board, new Rectangle(0, 0, owner.board.Width, owner.board.Height));
             foreach (var p in owner.placed)
                 owner.DrawTile(g, owner.revealed ? owner.fronts[p.Name] : owner.back, p.Center, p.Rotation);
+            owner.DrawMovementHints(g);
             owner.DrawInitialPieces(g);
             if (hover is Hex h && !owner.revealed && owner.deck.Count > 0)
             {
