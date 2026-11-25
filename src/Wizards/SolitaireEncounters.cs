@@ -34,7 +34,8 @@ internal sealed partial class TerritorySetup
         encounterHistory.Click += (_,_) => ShowEncounterLog();
         inspectCards.Click += (_,_) => ShowDrawnCards();
         testEncounter.Click += (_,_) => ChooseTestEncounter();
-        tools.Controls.Add(resolveEncounter); tools.Controls.Add(encounterHistory); tools.Controls.Add(inspectCards); tools.Controls.Add(testEncounter);
+        taskProgress.Click += (_,_) => ShowTaskProgress();
+        tools.Controls.Add(resolveEncounter); tools.Controls.Add(encounterHistory); tools.Controls.Add(inspectCards); tools.Controls.Add(taskProgress); tools.Controls.Add(testEncounter);
     }
     private void RefreshEncounterControls()
     {
@@ -42,6 +43,7 @@ internal sealed partial class TerritorySetup
         testEncounter.Enabled = initialState != null && moveStage == MoveStage.Finished && !encounterResolved;
         encounterHistory.Enabled = encounterLog.Count > 0;
         inspectCards.Enabled = tasks.Count + events.Count > 0;
+        taskProgress.Enabled = initialState != null;
     }
     private void Log(string message) => encounterLog.Add($"Fortnight {previewFortnight+1}, Day {initialState!.Day}: {message}");
     private int HighRoll(string label, int? forced = null)
@@ -71,30 +73,46 @@ internal sealed partial class TerritorySetup
     }
     private void ShowDrawnCards()
     {
-        using var f=new Form {Text="Wizards — Drawn cards (effects pending)",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(460,380)};
+        using var f=new Form {Text="Wizards — Active cards",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(460,380)};
         var list=new ListBox {Dock=DockStyle.Fill};
-        var cards=tasks.Select(x=>(x.Name,Label:(x.Mandatory?"Mandatory ":"Optional ")+x.Name)).Concat(events.Select(x=>(Name:x,Label:x))).ToList();
+        var cards=tasks.Select(x=>(x.Name,Label:(x.Mandatory?"Mandatory ":"Optional ")+x.Name+(activeTasks.ContainsKey(x.Name)?" (active)":" (pending)"))).Concat(events.Select(x=>(Name:x,Label:x))).ToList();
         foreach(var c in cards) list.Items.Add(c.Label);
         var open=new Button { Text="View selected card",Dock=DockStyle.Bottom,Height=40 };
         open.Click+=(_,_)=>{if(list.SelectedIndex>=0)ShowCard(cards[list.SelectedIndex].Name,cards[list.SelectedIndex].Label);};
         list.DoubleClick+=(_,_)=>{if(list.SelectedIndex>=0)ShowCard(cards[list.SelectedIndex].Name,cards[list.SelectedIndex].Label);};
         f.Controls.Add(list);f.Controls.Add(open);f.ShowDialog(this);
     }
-    private void DrawTask(bool mandatory)
+    private void DrawTask(bool mandatory,string? source=null)
     {
         var s=initialState!;
         if(s.Rank==0 || s.Rank==4 || dragonbound){Log("Task not assigned at this rank or while Dragonbound.");return;}
-        if(s.TaskDeck.Count==0){Log("Task deck exhausted; discard recycling not implemented.");deferredEffects=true;return;}
-        string name=s.TaskDeck[0];s.TaskDeck.RemoveAt(0);tasks.Add((name,mandatory));
-        Log($"{(mandatory?"Mandatory":"Optional")} task drawn: {name}. Task placement and completion pending.");
-        deferredEffects=true;ShowCard(name,"Task — "+(mandatory?"Mandatory":"Optional")+" (effects pending)");
+        while(s.TaskDeck.Count>0)
+        {
+            string name=s.TaskDeck[0];s.TaskDeck.RemoveAt(0);
+            bool known=TaskDefinitions.TryGetValue(CardNumber(name),out var definition);
+            if(known && !TaskPossible(definition!))
+            {
+                taskDiscard.Add(name);
+                Log(TaskLabel(name)+" needs a missing Territory; set aside and redraw (solitaire preview interpretation).");
+                continue;
+            }
+            tasks.Add((name,mandatory));
+            Log($"{(mandatory?"Mandatory":"Optional")} task drawn: {name}.");
+            ShowCard(name,"Task — "+(mandatory?"Mandatory":"Optional")+(known?"":" (automation pending)"));
+            if(known)RegisterTask(name,definition!,source);
+            else {deferredEffects=true;Log("Card-specific task automation pending.");}
+            return;
+        }
+        Log("Task deck exhausted; discard recycling not implemented.");deferredEffects=true;
     }
     private void DrawEvent()
     {
         var s=initialState!;
         if(s.EventDeck.Count==0){Log("Event deck exhausted; discard recycling not implemented.");deferredEffects=true;return;}
-        string name=s.EventDeck[0];s.EventDeck.RemoveAt(0);events.Add(name);deferredEffects=true;
-        Log($"Event drawn: {name}. Card effect pending.");ShowCard(name,"Event (effect pending)");
+        string name=s.EventDeck[0];s.EventDeck.RemoveAt(0);
+        Log($"Event drawn: {name}.");ShowCard(name,"Event");
+        if(ApplyEventCard(name)){eventDiscard.Add(name);Log("Immediate Event resolved and discarded: "+name+".");}
+        else {events.Add(name);deferredEffects=true;Log("Event effect pending or required destination unavailable: "+name+".");}
     }
     private void Award(int amount)
     {
@@ -135,7 +153,7 @@ internal sealed partial class TerritorySetup
         int actual=Math.Min(points[index],amount);points[index]-=actual;
         (s.Knowledge,s.Perception,s.Power)=(points[0],points[1],points[2]);Log($"Lost {actual} {names[index]} points.");
     }
-    private void Theft(){Log("Magical Objects and Gems stolen; inventory/task-loss handling awaits full card rules.");if(tasks.Count>0)deferredEffects=true;}
+    private void Theft(){Log("Magical Objects and Gems stolen.");FailStolenTasks();if(tasks.Any(t=>!activeTasks.ContainsKey(t.Name))){deferredEffects=true;Log("Check unresolved Tasks for additional stolen objects.");}}
     private void Heal(){demonDazed=false;dragonbound=false;Log("Afflictions healed. No other benefit from this encounter.");}
     private bool Afflicted=>demonDazed||dragonbound;
     private bool Trapped=>escapeTrap||fortnightTrap;
@@ -170,20 +188,23 @@ internal sealed partial class TerritorySetup
         if(h.HasValue)Transport(h.Value);
         else {Log("Named destination unavailable. Removed-territory handling requires further rule implementation.");deferredEffects=true;}
     }
-    private void Mentor(string order,string name)
+    private void Mentor(string order,string name,bool taskFulfilled=false)
     {
         var s=initialState!;
         if(Afflicted){Heal();return;}
+        string? source=order=="Wizards"&&WizardNames.Contains(name)?"wizard:"+name:order!="Wizards"?"mentor":null;
+        if(s.Order==order && source=="mentor")taskFulfilled=ResolveTaskMeeting(source)||taskFulfilled;
+        if(s.Order!=order && taskFulfilled)return;
         if(s.Order!=order)
         {
             if(MessageBox.Show(this,$"{name} offers membership in the Order of {order}. Accept?", "Magical Order",MessageBoxButtons.YesNo)==DialogResult.Yes)
             {
                 if(s.Order!="None")
                     for(int i=0;i<tasks.Count;i++)tasks[i]=(tasks[i].Name,false);
-                s.Order=order;s.Rank=1;lastPromotionDay=AbsolutePreviewDay;Log($"Joined Order of {order} as Apprentice (Rank 1).");DrawTask(true);
+                s.Order=order;s.Rank=1;lastPromotionDay=AbsolutePreviewDay;Log($"Joined Order of {order} as Apprentice (Rank 1).");DrawTask(true,source);
                 return;
             }
-            if(s.Rank>0&&s.Rank<4)DrawTask(false);
+            if(s.Rank>0&&s.Rank<4)DrawTask(false,source);
             return;
         }
         int[][] thresholds=order=="Wizards"?new[]{new[]{15,10,5},new[]{40,30,20},new[]{75,60,45}}:
@@ -194,7 +215,7 @@ internal sealed partial class TerritorySetup
             var t=thresholds[s.Rank-1];
             if(AbsolutePreviewDay-lastPromotionDay>=3&&s.Knowledge>=t[0]&&s.Perception>=t[1]&&s.Power>=t[2])
             {s.Rank++;lastPromotionDay=AbsolutePreviewDay;Log($"Promoted to Rank {s.Rank}.");}
-            if(s.Rank<4)DrawTask(true);
+            if(s.Rank<4)DrawTask(true,source);
         }
         else if(s.Rank==4){Log("Rank 4 mentor services and Gem collection require completed task and spell systems.");deferredEffects=true;}
     }
@@ -214,7 +235,8 @@ internal sealed partial class TerritorySetup
     {
         string name=card.Replace("Wizard_Card_","");
         Log("High Wizard encountered: "+name+".");
-        Mentor("Wizards",name);
+        bool taskFulfilled=!Afflicted&&ResolveTaskMeeting("wizard:"+name);
+        Mentor("Wizards",name,taskFulfilled);
         if(cells.TryGetValue(initialState!.Player,out var c)&&TileKey(c.Tile)=="Magic_6"&&!dragonbound)
             lairDeadline=(initialState.Day+12)%14+1; // 2003 correction 4
     }
@@ -321,13 +343,18 @@ internal sealed partial class TerritorySetup
         try
         {
             var s=initialState!;
+            if(transported){ignoredTaskHex=null;OfferTaskPickup(h);}
+            bool metTask=ResolveTaskMarkers(h);
             bool metHigh=revealedWizards.ContainsKey(h);
             if(metHigh)ResolveRevealed(h);
             if(s.Player!=h)return;
             if(cells.TryGetValue(h,out var c)&&c.Encounter.Length>0)
             {
                 string name=c.Encounter;
-                if(!(metHigh && (name is "Common town" or "Elven dwelling" or "Shrineheart Abbey" or "High Hollow" or "Star Crest")))
+                bool skipPlace=(metHigh||metTask)&&(name is "Common town" or "Elven dwelling" or "Shrineheart Abbey" or "High Hollow" or "Star Crest");
+                if(metTask&&name=="Hamdrel"&&!Afflicted)skipPlace=true;
+                if(name=="Shrineheart Abbey"&&Afflicted&&!metHigh)skipPlace=false;
+                if(!skipPlace)
                 switch(name)
                 {
                     case "Common town":CommonFolk();break;
@@ -335,8 +362,8 @@ internal sealed partial class TerritorySetup
                         ElvenGift();break;
                     case "Hamdrel":
                         HamdrelGift();break;
-                    case "Master Sorcerer":Mentor("Sorcerers",TileLabel(c.Tile));break;
-                    case "Riiktal":Mentor("Druids","Riiktal");break;
+                    case "Master Sorcerer":Mentor("Sorcerers",TileLabel(c.Tile),metTask);break;
+                    case "Riiktal":Mentor("Druids","Riiktal",metTask);break;
                     case "Shrineheart Abbey":
                         if(Afflicted){Heal();break;}
                         int abbey=HighRoll("Shrineheart Abbey (§7.38)");
@@ -392,7 +419,7 @@ internal sealed partial class TerritorySetup
         if(initialState==null || moveStage!=MoveStage.Finished || encounterResolved)return;
         using var f=new Form { Text="Test encounter — changes current preview game",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(430,200),FormBorderStyle=FormBorderStyle.FixedDialog };
         var kind=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Left=15,Top=15,Width=395};
-        kind.Items.AddRange(new object[]{"Random encounter","Common Folk","Demons","Dragon","Trap","Animal","High Wizard (random card)","Hamdrel gift","Elven dwelling","Event card","Mentor: Wizards","Mentor: Sorcerers","Mentor: Druids"});kind.SelectedIndex=0;
+        kind.Items.AddRange(new object[]{"Random encounter","Common Folk","Demons","Dragon","Trap","Animal","High Wizard (random card)","Hamdrel gift","Elven dwelling","Event card","Task card (choose number)","Event card (choose number)","Mentor: Wizards","Mentor: Sorcerers","Mentor: Druids"});kind.SelectedIndex=0;
         var roll=new NumericUpDown {Minimum=1,Maximum=6,Value=6,Left=15,Top=60,Width=75};
         f.Controls.Add(kind);f.Controls.Add(roll);f.Controls.Add(new Label {Left=100,Top=64,AutoSize=true,Text="Force first table result (1–6)"});
         f.Controls.Add(new Label {Left=15,Top=100,Width=395,Height=40,Text="Testing only: this replaces the pending encounter, even if the location would not normally allow it."});
@@ -414,6 +441,8 @@ internal sealed partial class TerritorySetup
                 case "Hamdrel gift":HamdrelGift();break;
                 case "Elven dwelling":ElvenGift();break;
                 case "Event card":DrawEvent();break;
+                case "Task card (choose number)":if(SelectTestCard(initialState.TaskDeck,true))DrawTask(false);break;
+                case "Event card (choose number)":if(SelectTestCard(initialState.EventDeck,false))DrawEvent();break;
                 case "Mentor: Wizards":Mentor("Wizards","High Wizard");break;
                 case "Mentor: Sorcerers":Mentor("Sorcerers","Master Sorcerer");break;
                 case "Mentor: Druids":Mentor("Druids","Riiktal");break;
@@ -447,10 +476,12 @@ internal sealed partial class TerritorySetup
         }
         foreach(var h in demons)Mark(h,Color.DarkRed,"D");
         foreach(var h in revealedWizards.Keys)Mark(h,Color.DarkBlue,"W");
+        DrawTaskMarkers(g);
     }
     private string EncounterRecord()=> $"Affliction: {(dragonbound?"Dragonbound":demonDazed?"Demon Dazed":"None")} | Lost turns: {lostTurns}\r\n"+
         $"Trap: {(fortnightTrap?"Until fortnight":escapeTrap?"Roll 5 or 6":"None")} | Animal: {(animal==""?"None":animal+" ("+animalTurns+" turns)")}\r\n"+
-        $"Tasks drawn: {tasks.Count} ({tasks.Count(x=>x.Mandatory)} mandatory) | Events drawn: {events.Count}\r\n"+
+        $"Tasks held: {tasks.Count} ({tasks.Count(x=>x.Mandatory)} mandatory; {activeTasks.Count} automated) | Events held/pending: {events.Count}\r\n"+
+        $"Tasks completed: {initialState!.Completion} | Immediate Events discarded: {eventDiscard.Count}\r\n"+
         $"Demon spaces: {demons.Count} | Revealed Wizard spaces: {revealedWizards.Count}\r\n"+
         $"Pending card or rule effects: {(deferredEffects?"Yes":"None")}\r\n";
 }
