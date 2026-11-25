@@ -106,6 +106,13 @@ internal sealed partial class TerritorySetup
     }
     private bool TaskAt(Hex h)=>!dragonbound&&ignoredTaskHex!=h&&activeTasks.Values.Any(t=>t.Progress<t.Steps.Count&&t.Steps[t.Progress].Location==h);
     private bool TaskAuthorizesCrest(Hex h)=>!dragonbound&&activeTasks.Values.Any(t=>t.Progress<t.Steps.Count&&t.Steps[t.Progress].Location==h);
+    private void OfferTaskPickup(Hex h)
+    {
+        if(!TaskAt(h))return;
+        var labels=activeTasks.Values.Where(t=>t.Progress<t.Steps.Count&&t.Steps[t.Progress].Location==h).Select(t=>TaskLabel(t.Name));
+        if(MessageBox.Show(this,"Fulfill eligible Task objective(s) here?\r\n"+string.Join(", ",labels)+"\r\nNo leaves the Task Markers in place.","Task Marker",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)
+            ignoredTaskHex=h;
+    }
     private bool ResolveTaskMarkers(Hex h)
     {
         if(!TaskAt(h))return false;
