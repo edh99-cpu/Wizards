@@ -132,10 +132,16 @@ internal sealed partial class TerritorySetup
                 {
                     var town = Global(p,LocalSpace(code));
                     var neighbors = Clockwise.Select(d => Add(town,d)).ToArray();
+                    bool Water(Hex h)
+                    {
+                        var center = Center(h);
+                        return !land.Contains(h) && center.X - 2*Dx/3 >= 49 && center.X + 2*Dx/3 <= board.Width-49
+                            && center.Y-Dy/2 >= 49 && center.Y+Dy/2 <= board.Height-49;
+                    }
                     // Select the clockwise end of a contiguous run of water.
                     // In a disconnected tie, use the first clockwise candidate from north.
                     for (int i=0; i<6; i++)
-                        if (!land.Contains(neighbors[i]) && land.Contains(neighbors[(i+1)%6]))
+                        if (Water(neighbors[i]) && !Water(neighbors[(i+1)%6]))
                         {
                             state.Boats.Add(neighbors[i]);
                             break;
