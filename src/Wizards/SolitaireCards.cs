@@ -39,7 +39,31 @@ internal sealed partial class TerritorySetup
         [29]=Def(10,5,10,1,"random:All","random:Magic_6","random:Common,Elven"),
         [31]=Def(5,10,0,0,"random:All","wizard:Elekov,Zegoral,Veldor"),
         [35]=Def(5,0,10,0,"wizard:Ishkatar,Aevarex,Terek","site:Riiktal"),
-        [36]=Def(5,0,5,-1,"exact:Elven_1:C3","exact:Elven_2:B2")
+        [36]=Def(5,0,5,-1,"exact:Elven_1:C3","exact:Elven_2:B2"),
+        [27]=Def(5,5,5,0,"mentor","exact:Common_6:C2","exact:Elven_2:A1"),
+        [32]=Def(0,10,0,0,"coastal:Magic","exact:Elven_6:Center"),
+        [37]=Def(5,5,0,0,"random:Elven","exact:Elven_3:A1"),
+        [38]=Def(5,0,10,0,"random:Magic_4","wizard:Ishkatar,Aevarex,Elekov,Terek,Tolmitar,Veldor,Zegoral"),
+        [40]=Def(10,5,0,0,"exact:Magic_2:Center","exact:Elven_4:A4"),
+        [41]=Def(0,0,10,-1,"random:Magic","exact:Elven_3:A1"),
+        [42]=Def(0,10,5,-1,"random:Common,Elven","site:Hamdrel"),
+        [46]=Def(5,5,5,-1,"random:Magic_3","wizard:Tolmitar,Zegoral,Terek,Veldor"),
+        [47]=Def(0,5,10,-1,"site:Shrineheart Abbey","site:Riiktal"),
+        [48]=Def(10,0,0,-1,"exact:Common_6:C6","exact:Common_4:C2"),
+        [49]=Def(0,5,5,-1,"exact:Common_3:B1","site:Shrineheart Abbey"),
+        [50]=Def(5,0,10,-1,"exact:Elven_6:Center","exact:Elven_2:B2","exact:Elven_3:A1"),
+        [51]=Def(0,10,0,-1,"random:Common,Elven","exact:Common_5:B5"),
+        [54]=Def(10,10,10,0,"exact:Magic_6:Center","exact:Magic_2:Center"),
+        [55]=Def(5,5,0,-1,"random:All","site:Shrineheart Abbey"),
+        [56]=Def(5,10,10,-1,"random:Magic_6","anysettlement"),
+        [57]=Def(0,5,5,-1,"exact:Elven_1:C3","site:Star Crest"),
+        [58]=Def(0,5,10,-1,"random:All","exact:Magic_3:Center"),
+        [59]=Def(0,5,5,-1,"random:Common,Elven","exact:Elven_2:B2"),
+        [63]=Def(5,5,0,-1,"exact:Common_5:A2","site:High Hollow"),
+        [64]=Def(10,5,10,0,"random:NotLair","random:Magic_6"),
+        [65]=Def(10,10,5,0,"random:Magic_6","exact:Elven_1:C3"),
+        [66]=Def(0,5,5,0,"exact:Elven_5:B5","random:All"),
+        [67]=Def(5,0,5,-1,"exact:Elven_4:A4","random:Common,Elven")
     };
     private static int CardNumber(string name)=>int.TryParse(name.Split('_').Last(),out int n)?n:0;
     private bool IsAutomatedTask(string name)=>TaskDefinitions.ContainsKey(CardNumber(name));
@@ -62,10 +86,12 @@ internal sealed partial class TerritorySetup
         var bits=spec.Split(':');
         if(bits[0]=="exact")return cells.Where(x=>TileKey(x.Value.Tile)==bits[1]&&x.Value.Code==bits[2]).Select(x=>x.Key).ToList();
         if(bits[0] is "site" or "any")return cells.Where(x=>x.Value.Encounter==bits[1]).Select(x=>x.Key).ToList();
+        if(bits[0]=="anysettlement")return cells.Where(x=>x.Value.Encounter is "Common town" or "Elven dwelling").Select(x=>x.Key).ToList();
+        if(bits[0]=="coastal")return cells.Where(x=>TileKey(x.Value.Tile).StartsWith(bits[1]+"_")&&Clockwise.Any(d=>OnBoard(Add(x.Key,d))&&!cells.ContainsKey(Add(x.Key,d)))).Select(x=>x.Key).ToList();
         if(bits[0]=="random")
         {
             var categories=bits[1].Split(',');
-            return cells.Where(x=>x.Value.Code!="Center"&&categories.Any(cat=>cat=="All"||TileKey(x.Value.Tile)==cat||TileKey(x.Value.Tile).StartsWith(cat+"_"))).Select(x=>x.Key).ToList();
+            return cells.Where(x=>x.Value.Code!="Center"&&categories.Any(cat=>cat=="All"||(cat=="NotLair"&&TileKey(x.Value.Tile)!="Magic_6")||TileKey(x.Value.Tile)==cat||TileKey(x.Value.Tile).StartsWith(cat+"_"))).Select(x=>x.Key).ToList();
         }
         if(bits[0]=="here")return new(){initialState!.Player};
         return new();
@@ -146,7 +172,7 @@ internal sealed partial class TerritorySetup
     private void FixedPoints(int k,int p,int w,string reason)
     {
         var s=initialState!;
-        if(s.Rank is 0 or 4||dragonbound){Log(reason+": no points gained at this rank or while Dragonbound.");return;}
+        string? denial=PointDenial();if(denial!=null){Log(reason+": "+denial);return;}
         s.Knowledge+=k;s.Perception+=p;s.Power+=w;
         Log($"{reason}: +{k} Knowledge, +{p} Perception, +{w} Power.");
     }
@@ -188,6 +214,7 @@ internal sealed partial class TerritorySetup
             CompleteTask(choices[Math.Max(0,list.SelectedIndex)]);
         }
     }
+    private string? PointDenial()=>dragonbound?"No points gained: Dragonbound.":initialState!.Rank==0?"No points gained: you have not joined a Magical Order (Rank 0).":initialState.Rank==4?"No points gained: maximum rank (Rank 4) reached.":null;
     private bool ApplyEventCard(string name)
     {
         int n=CardNumber(name);
@@ -210,6 +237,13 @@ internal sealed partial class TerritorySetup
                 var destination=PickHex(cells.Where(x=>TileKey(x.Value.Tile).StartsWith("Elven_")).Select(x=>x.Key),"Event 21 — select Elven destination");
                 if(!destination.HasValue)return false;
                 Transport(destination.Value);break;
+            case 23:
+                int gift=2*SingleRoll("Perception and Power award");FixedPoints(0,gift,gift,"Event 23");HoldEvent(name);break;
+            case 27:case 29:HoldEvent(name);break;
+            case 25:case 28:HoldTimedEvent(name,14,true);break;
+            case 34:case 40:case 42:HoldMovementEvent(name,2);break;
+            case 35:case 36:case 38:case 39:case 41:HoldMovementEvent(name,7);break;
+            case 43:HoldMovementEvent(name,3);break;
             default:return false;
         }
         return true;
@@ -254,7 +288,7 @@ internal sealed partial class TerritorySetup
         var list=new ListBox{Dock=DockStyle.Fill};
         var cards=deck.OrderBy(CardNumber).ToList();
         if(cards.Count==0){Log("No cards left in deck.");return false;}
-        foreach(var card in cards)list.Items.Add(card+(task?(IsAutomatedTask(card)?" (automated)":" (pending)"):""));
+        foreach(var card in cards)list.Items.Add(card+(task?(IsAutomatedTask(card)?" (automated)":" (pending)"):(IsAutomatedEvent(CardNumber(card))?" (automated)":" (pending)")));
         list.SelectedIndex=0;
         var ok=new Button{Text="Draw selected card",Dock=DockStyle.Bottom,Height=40,DialogResult=DialogResult.OK};f.Controls.Add(list);f.Controls.Add(ok);f.AcceptButton=ok;
         if(f.ShowDialog(this)!=DialogResult.OK)return false;

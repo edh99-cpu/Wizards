@@ -134,6 +134,7 @@ internal sealed partial class TerritorySetup
         endMove.Enabled=initialState!=null && moveStage==MoveStage.Moving;
         nextTest.Enabled=initialState!=null && moveStage==MoveStage.Finished && encounterResolved;
         nextTest.Text=initialState?.Day==13 && extraTurns==0 ? "Skip Evil Attack (test only)" : "Next test turn";
+        ExpireEvents();
         RefreshEncounterControls();
     }
     private string MovementStatus()
@@ -160,6 +161,7 @@ internal sealed partial class TerritorySetup
         }
         if(escapeTrap){escapeTrap=false;Log("Trap escaped; move immediately with freeing roll.");}
         if(forcedEncounter){forcedEncounter=false;pendingEncounter="Forced encounter";remainingHalf=0;moveStage=MoveStage.Finished;moveNote="Required repeat encounter; click Resolve encounter.";UpdateStatus();canvas.Invalidate();return;}
+        ApplyMovementEventRoll();
         if(animal=="Horse" && !Afflicted)remainingHalf+=8;
         if(animal=="Hound" && !Afflicted && !occupiedBoat.HasValue)remainingHalf+=2;
         moveNote="Click an adjacent green hex, or End movement.";
@@ -208,7 +210,7 @@ internal sealed partial class TerritorySetup
         else action="Walk";
 
         if(dragonbound && c!.Encounter=="High Hollow"){error="Dragonbound players cannot enter High Hollow.";return false;}
-        if(c!.Kind==Terrain.Crest && (dragonbound || (!crestReentry&&!TaskAuthorizesCrest(target)))){error="Star Crest requires authorization or permitted re-entry.";return false;}
+        if(c!.Kind==Terrain.Crest && (dragonbound || (!crestReentry&&!TaskAuthorizesCrest(target)&&!HasCrestPass()))){error="Star Crest requires authorization or permitted re-entry.";return false;}
         if(c.Kind==Terrain.Stone)
         {
             if(movedSteps!=0 || whiteDie!=c.Stone){error=$"Entering this stone requires an adjacent starting position and white die {c.Stone}.";return false;}
@@ -220,7 +222,7 @@ internal sealed partial class TerritorySetup
             {error="Riiktal is accessible from a stone with white die 1–3.";return false;}
             cost=remainingHalf;action="Enter circle";return true;
         }
-        cost=(Afflicted || (c.Kind is Terrain.Woods or Terrain.Mountain))?4:2;
+        cost=EventLandCost(c.Kind,(Afflicted || (c.Kind is Terrain.Woods or Terrain.Mountain))?4:2);
         return Affordable(cost,out error);
     }
     private bool Affordable(int cost,out string error)
@@ -240,7 +242,11 @@ internal sealed partial class TerritorySetup
         var previous=s.Player;
         if((animal is "Horse" or "Hound") && ((action=="Board" && animal=="Horse") || (cells.TryGetValue(target,out var animalCell) && ((TileKey(animalCell.Tile) is "Magic_1" or "Magic_6") || animalCell.Kind==Terrain.Crest)))){animal="";animalTurns=0;}
         if(cells.TryGetValue(previous,out var previousCell) && previousCell.Kind==Terrain.Crest && !usedCrestReentry){crestReentry=true;crestDepartureDay=AbsolutePreviewDay;}
-        if(cells.TryGetValue(target,out var newCell) && newCell.Kind==Terrain.Crest && crestReentry){crestReentry=false;usedCrestReentry=true;}
+        if(cells.TryGetValue(target,out var newCell) && newCell.Kind==Terrain.Crest)
+        {
+            if(crestReentry){crestReentry=false;usedCrestReentry=true;}
+            else if(!TaskAuthorizesCrest(target))UseCrestPass();
+        }
         UpdateLair(previous,target);
         s.Player=target;s.PlayerLocation=Describe(target);remainingHalf-=cost;movedSteps++;
         moveNote=action+" → "+Describe(target);
@@ -301,7 +307,7 @@ internal sealed partial class TerritorySetup
             Log("TEST ONLY — Evil Attack resolution skipped.");
             if(animalTurns>0){animalTurns--;if(animalTurns==0)animal="";}
             if(lostTurns>0)lostTurns--;
-            if(lairDeadline==14&&!dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound after remaining in the lair.");}
+            if(lairDeadline==14&&!dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;DiscardAllEvents("Dragonbound");Log("Dragonbound after remaining in the lair.");}
             fortnightTrap=false;
             previewFortnight++;
             initialState.Day=1;
@@ -309,7 +315,7 @@ internal sealed partial class TerritorySetup
             moveNote="Test fortnight — Evil Attack skipped. Roll movement.";
         }
         else{initialState.Day++;moveNote="Test day — roll movement.";}
-        if(lairDeadline==initialState.Day && !dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound after remaining in the lair.");}
+        if(lairDeadline==initialState.Day && !dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;DiscardAllEvents("Dragonbound");Log("Dragonbound after remaining in the lair.");}
         moveStage=MoveStage.Waiting;encounterResolved=false;pendingEncounter="";UpdateStatus();canvas.Invalidate();
     }
     private void DrawMovementHints(Graphics g)

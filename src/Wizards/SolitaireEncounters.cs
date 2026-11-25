@@ -111,13 +111,15 @@ internal sealed partial class TerritorySetup
         if(s.EventDeck.Count==0){Log("Event deck exhausted; discard recycling not implemented.");deferredEffects=true;return;}
         string name=s.EventDeck[0];s.EventDeck.RemoveAt(0);
         Log($"Event drawn: {name}.");ShowCard(name,"Event");
-        if(ApplyEventCard(name)){eventDiscard.Add(name);Log("Immediate Event resolved and discarded: "+name+".");}
+        if(CardNumber(name)>=44&&ProtectedFromTraps()){eventDiscard.Add(name);Log("Event trap automatically escaped.");return;}
+        if(MovementCard(CardNumber(name)))CancelMovementEvent("replaced by another Movement Event");
+        if(ApplyEventCard(name)){if(!events.Contains(name)&&!eventDiscard.Contains(name)){eventDiscard.Add(name);Log("Immediate Event resolved and discarded: "+name+".");}}
         else {events.Add(name);deferredEffects=true;Log("Event effect pending or required destination unavailable: "+name+".");}
     }
     private void Award(int amount)
     {
         var s=initialState!;
-        if(s.Rank is 0 or 4 || dragonbound){Log("No points gained at this rank or while Dragonbound.");return;}
+        string? denial=PointDenial();if(denial!=null){Log(denial);return;}
         using var f=new Form {Text=$"Allocate {amount} points",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(365,195),FormBorderStyle=FormBorderStyle.FixedDialog,ControlBox=false};
         var k=new NumericUpDown {Minimum=0,Maximum=amount,Left=180,Top=18,Width=140};
         var p=new NumericUpDown {Minimum=0,Maximum=amount,Left=180,Top=52,Width=140};
@@ -153,7 +155,7 @@ internal sealed partial class TerritorySetup
         int actual=Math.Min(points[index],amount);points[index]-=actual;
         (s.Knowledge,s.Perception,s.Power)=(points[0],points[1],points[2]);Log($"Lost {actual} {names[index]} points.");
     }
-    private void Theft(){Log("Magical Objects and Gems stolen.");FailStolenTasks();if(tasks.Any(t=>!activeTasks.ContainsKey(t.Name))){deferredEffects=true;Log("Check unresolved Tasks for additional stolen objects.");}}
+    private void Theft(){if(ProtectTheft())return;Log("Magical Objects and Gems stolen.");FailStolenTasks();if(tasks.Any(t=>!activeTasks.ContainsKey(t.Name))){deferredEffects=true;Log("Check unresolved Tasks for additional stolen objects.");}}
     private void Heal(){demonDazed=false;dragonbound=false;Log("Afflictions healed. No other benefit from this encounter.");}
     private bool Afflicted=>demonDazed||dragonbound;
     private bool Trapped=>escapeTrap||fortnightTrap;
@@ -260,6 +262,8 @@ internal sealed partial class TerritorySetup
         ReturnWizardCards(drawn);
         if(high){MeetHigh(card);return;}
         if(card.Contains("Phantasm")){Log("Phantasm: no encounter.");return;}
+        if(ProtectedFromTraps()){Log("Wizard card trap automatically escaped by active Event.");return;}
+        CancelMovementEvent("Wizard card trap");
         if(card.Contains("Star_Crest"))TransportNamed("Star Crest");
         else if(card.Contains("Hamdrel"))TransportNamed("Hamdrel");
         else if(card.Contains("Shrineheart"))TransportNamed("Shrineheart Abbey");
@@ -295,7 +299,7 @@ internal sealed partial class TerritorySetup
         {case 1:lostTurns+=SingleRoll("Turns lost");break;
         case 2:LosePoints(SingleRoll("Point loss"),true);break;
         case 3:Theft();break;
-        case 4:demonDazed=true;animal="";animalTurns=0;Log("Demon Dazed.");if(events.Count>0)deferredEffects=true;break;
+        case 4:demonDazed=true;animal="";animalTurns=0;CancelMovementEvent("Demon Dazed");Log("Demon Dazed.");if(events.Count>0)deferredEffects=true;break;
         case 5:Transport(LairRandom());break;
         case 6:demons.Remove(h);Log("Demons depart.");Award(SingleRoll("Points gained"));break;}
     }
@@ -307,7 +311,7 @@ internal sealed partial class TerritorySetup
         int result=HighRoll("Dragon (§7.305)");
         if(result==4&&s.Rank==4)result=3;
         switch(result)
-        {case 1:dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound; held Events discarded.");break;
+        {case 1:dragonbound=true;lairDeadline=null;animal="";animalTurns=0;DiscardAllEvents("Dragonbound");Log("Dragonbound; held Events discarded.");break;
         case 2:lostTurns+=SingleRoll("Turns lost");break;
         case 3:Theft();break;case 4:LosePoints(2*SingleRoll("Point loss"),true);break;
         case 5:if(s.Player==LairCenter()){forcedEncounter=true;repeatEncounter="Dragon";Log("Must encounter Dragon again next turn.");}else Transport(LairCenter());break;
@@ -315,6 +319,8 @@ internal sealed partial class TerritorySetup
     }
     private void TrapEncounter()
     {
+        if(ProtectedFromTraps()){Log("Trap automatically escaped by active Event.");return;}
+        CancelMovementEvent("trapped");
         switch(HighRoll("Trap (§8.3)"))
         {case 1:fortnightTrap=true;Log("Trapped until end of fortnight.");break;
         case 2:Transport(LairCenter());break;
@@ -481,7 +487,7 @@ internal sealed partial class TerritorySetup
     private string EncounterRecord()=> $"Affliction: {(dragonbound?"Dragonbound":demonDazed?"Demon Dazed":"None")} | Lost turns: {lostTurns}\r\n"+
         $"Trap: {(fortnightTrap?"Until fortnight":escapeTrap?"Roll 5 or 6":"None")} | Animal: {(animal==""?"None":animal+" ("+animalTurns+" turns)")}\r\n"+
         $"Tasks held: {tasks.Count} ({tasks.Count(x=>x.Mandatory)} mandatory; {activeTasks.Count} automated) | Events held/pending: {events.Count}\r\n"+
-        $"Tasks completed: {initialState!.Completion} | Immediate Events discarded: {eventDiscard.Count}\r\n"+
+        $"Tasks completed: {initialState!.Completion} | Events discarded: {eventDiscard.Count}\r\n"+ActiveEventRecord()+
         $"Demon spaces: {demons.Count} | Revealed Wizard spaces: {revealedWizards.Count}\r\n"+
         $"Pending card or rule effects: {(deferredEffects?"Yes":"None")}\r\n";
 }
