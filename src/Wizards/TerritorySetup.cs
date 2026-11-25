@@ -3,7 +3,7 @@ using System.IO.Compression;
 
 namespace Wizards;
 
-internal sealed class TerritorySetup : Form
+internal sealed partial class TerritorySetup : Form
 {
     private readonly Image board;
     private readonly Image back;
@@ -28,12 +28,12 @@ internal sealed class TerritorySetup : Form
     {
         try
         {
-            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Wizards", "Artwork-v1");
+            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Wizards", "Artwork-v2");
             if (!File.Exists(Path.Combine(folder, "ready.txt")))
             {
                 using var picker = new OpenFileDialog
                 {
-                    Title = "Select your Wizards v1.0 VASSAL module (one-time artwork import)",
+                    Title = "Select your Wizards v1.0 VASSAL module (expanded artwork import)",
                     Filter = "Wizards module (*.vmod)|*.vmod|ZIP archive (*.zip)|*.zip"
                 };
                 if (picker.ShowDialog(owner) != DialogResult.OK) return;
@@ -55,11 +55,11 @@ internal sealed class TerritorySetup : Form
     {
         using var zip = ZipFile.OpenRead(archive);
         var entries = zip.Entries.Where(e => e.FullName.StartsWith("images/", StringComparison.Ordinal)
-            && (e.Name == "Board_2917x4276.png" || e.Name == "Tile_Back.png"
-            || (e.Name.StartsWith("Territory_", StringComparison.Ordinal) && e.Name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)))).ToArray();
-        if (entries.Length != 20 || !entries.Any(e => e.Name == "Board_2917x4276.png")
+            && SetupAsset(e.Name)).ToArray();
+        if (entries.Count(e => e.Name.StartsWith("Territory_", StringComparison.Ordinal)) != 18
+            || !entries.Any(e => e.Name == "Board_2917x4276.png")
             || !entries.Any(e => e.Name == "Tile_Back.png")
-            || entries.Select(e => e.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 20)
+            || entries.Select(e => e.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != entries.Length)
             throw new InvalidDataException("Expected the board, tile back and 18 Territory fronts from Wizards v1.0.");
         Directory.CreateDirectory(folder);
         foreach (var entry in entries)
@@ -68,7 +68,7 @@ internal sealed class TerritorySetup : Form
             using (var image = Image.FromStream(stream)) { _ = image.Width; }
             entry.ExtractToFile(Path.Combine(folder, entry.Name), true);
         }
-        File.WriteAllText(Path.Combine(folder, "ready.txt"), "Wizards artwork v1");
+        File.WriteAllText(Path.Combine(folder, "ready.txt"), "Wizards artwork v2");
     }
 
     private static Image LoadImage(string path)
@@ -79,6 +79,7 @@ internal sealed class TerritorySetup : Form
 
     private TerritorySetup(string folder, int removed, int tower)
     {
+        artworkFolder = folder;
         board = LoadImage(Path.Combine(folder, "Board_2917x4276.png"));
         back = LoadImage(Path.Combine(folder, "Tile_Back.png"));
         foreach (string file in Directory.GetFiles(folder, "Territory_*.png"))
@@ -115,6 +116,10 @@ internal sealed class TerritorySetup : Form
         tools.Controls.Add(rotate);
         tools.Controls.Add(undo);
         tools.Controls.Add(reveal);
+        completeSetup.Click += (_, _) => CompleteInitialSetup();
+        viewRecord.Click += (_, _) => ShowInitialRecord();
+        tools.Controls.Add(completeSetup);
+        tools.Controls.Add(viewRecord);
         tools.Controls.Add(MakeButton("Return to menu", Close));
         tools.Controls.Add(status);
         canvas = new BoardCanvas(this);
@@ -156,7 +161,9 @@ internal sealed class TerritorySetup : Form
         reveal.Enabled = deck.Count == 0 && !revealed;
         rotate.Enabled = deck.Count > 0 && !revealed;
         undo.Enabled = placed.Count > 0 && !revealed;
-        status.Text = revealed ? "Territories revealed — setup preview complete. Boats, starting positions and gameplay not yet implemented."
+        completeSetup.Enabled = revealed && initialState == null;
+        status.Text = initialState != null ? $"Day 1 | {initialState.Color} | Rank 0 | {initialState.Boats.Count} boats | Setup complete — movement not yet enabled."
+            : revealed ? "Territories revealed — click Complete setup to initialize the game."
             : $"Placed: {placed.Count}   Remaining: {deck.Count}   Rotation: {rotation * 60}°   |   Click a valid hex to place.";
     }
 
@@ -238,6 +245,7 @@ internal sealed class TerritorySetup : Form
             board.Dispose();
             back.Dispose();
             foreach (var image in fronts.Values) image.Dispose();
+            foreach (var image in setupImages.Values) image.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -275,6 +283,7 @@ internal sealed class TerritorySetup : Form
             g.DrawImage(owner.board, new Rectangle(0, 0, owner.board.Width, owner.board.Height));
             foreach (var p in owner.placed)
                 owner.DrawTile(g, owner.revealed ? owner.fronts[p.Name] : owner.back, p.Center, p.Rotation);
+            owner.DrawInitialPieces(g);
             if (hover is Hex h && !owner.revealed && owner.deck.Count > 0)
             {
                 bool valid = owner.Valid(h);
