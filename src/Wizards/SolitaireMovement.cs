@@ -72,7 +72,7 @@ internal sealed partial class TerritorySetup
                 if(Listed(Woods,key,code)) kind=Terrain.Woods;
                 if(Listed(Mountains,key,code)) kind=Terrain.Mountain;
                 if(key=="Magic_5") kind=Terrain.Woods;
-                if(key=="Magic_6" || (key is "Magic_2" or "Magic_3" or "Magic_4" && Inner.Contains(code))) kind=Terrain.Mountain;
+                if(key=="Magic_6" || ((key is "Magic_2" or "Magic_3" or "Magic_4") && Inner.Contains(code))) kind=Terrain.Mountain;
                 if(Settlements.TryGetValue(key,out var towns) && towns.Contains(code))
                 {
                     kind=key=="Common_3" && code=="C6" ? Terrain.Abbey : Terrain.Town;
@@ -171,7 +171,7 @@ internal sealed partial class TerritorySetup
                 if(sailed){error="Cannot disembark on the turn the boat sails.";return false;}
                 action="Disembark";
             }
-            else if(boat>=0 && !sailed && boarded)
+            else if(boat>=0 && !sailed)
             {
                 cost=2;action="Board";return Affordable(cost,out error);
             }
@@ -243,7 +243,7 @@ internal sealed partial class TerritorySetup
         string key=TileKey(c.Tile);
         return c.Kind is not (Terrain.Stone or Terrain.CircleCenter)
             && key is not ("Magic_5" or "Magic_6")
-            && !(key is "Magic_2" or "Magic_3" or "Magic_4" && c.Kind==Terrain.Mountain)
+            && !((key is "Magic_2" or "Magic_3" or "Magic_4") && c.Kind==Terrain.Mountain)
             && c.Encounter.Length==0 && initialState!.Dragon!=h;
     }
     private void FinishMovement(string specific)
@@ -254,7 +254,7 @@ internal sealed partial class TerritorySetup
         pendingEncounter=specific.Length>0?"Specific encounter: "+specific :
             redDie<=3 && RandomEligible(initialState.Player)?"Random encounter":"No encounter";
         remainingHalf=0;moveStage=MoveStage.Finished;
-        moveNote=pendingEncounter+". Resolution not implemented.";
+        moveNote=pendingEncounter+(pendingEncounter=="No encounter"?". Movement complete.":". Resolution not implemented.");
         UpdateStatus();canvas.Invalidate();
     }
     private void AdvanceTest()
