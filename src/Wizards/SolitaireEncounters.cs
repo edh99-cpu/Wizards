@@ -43,7 +43,7 @@ internal sealed partial class TerritorySetup
         encounterHistory.Enabled = encounterLog.Count > 0;
         inspectCards.Enabled = tasks.Count + events.Count > 0;
     }
-    private void Log(string message) => encounterLog.Add($"Day {initialState!.Day}: {message}");
+    private void Log(string message) => encounterLog.Add($"Fortnight {previewFortnight+1}, Day {initialState!.Day}: {message}");
     private int HighRoll(string label, int? forced = null)
     {
         int a=Die(), b=Die(), result=Math.Max(a,b);
@@ -180,7 +180,7 @@ internal sealed partial class TerritorySetup
             {
                 if(s.Order!="None")
                     for(int i=0;i<tasks.Count;i++)tasks[i]=(tasks[i].Name,false);
-                s.Order=order;s.Rank=1;lastPromotionDay=s.Day;Log($"Joined Order of {order} as Apprentice (Rank 1).");DrawTask(true);
+                s.Order=order;s.Rank=1;lastPromotionDay=AbsolutePreviewDay;Log($"Joined Order of {order} as Apprentice (Rank 1).");DrawTask(true);
                 return;
             }
             if(s.Rank>0&&s.Rank<4)DrawTask(false);
@@ -192,8 +192,8 @@ internal sealed partial class TerritorySetup
         if(s.Rank>=1&&s.Rank<4)
         {
             var t=thresholds[s.Rank-1];
-            if(s.Day-lastPromotionDay>=3&&s.Knowledge>=t[0]&&s.Perception>=t[1]&&s.Power>=t[2])
-            {s.Rank++;lastPromotionDay=s.Day;Log($"Promoted to Rank {s.Rank}.");}
+            if(AbsolutePreviewDay-lastPromotionDay>=3&&s.Knowledge>=t[0]&&s.Perception>=t[1]&&s.Power>=t[2])
+            {s.Rank++;lastPromotionDay=AbsolutePreviewDay;Log($"Promoted to Rank {s.Rank}.");}
             if(s.Rank<4)DrawTask(true);
         }
         else if(s.Rank==4){Log("Rank 4 mentor services and Gem collection require completed task and spell systems.");deferredEffects=true;}
