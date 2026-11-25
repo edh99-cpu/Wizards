@@ -11,6 +11,8 @@ internal sealed partial class TerritorySetup
     private enum MoveStage { Waiting, Moving, Finished }
     private MoveStage moveStage;
     private int whiteDie, redDie, remainingHalf, movedSteps;
+    private int previewFortnight;
+    private int AbsolutePreviewDay => previewFortnight * 14 + (initialState?.Day ?? 1);
     private int? occupiedBoat;
     private bool boarded, sailed;
     private string pendingEncounter = "", moveNote = "";
@@ -130,7 +132,8 @@ internal sealed partial class TerritorySetup
     {
         rollMove.Enabled=initialState!=null && moveStage==MoveStage.Waiting;
         endMove.Enabled=initialState!=null && moveStage==MoveStage.Moving;
-        nextTest.Enabled=initialState!=null && moveStage==MoveStage.Finished && encounterResolved && (initialState.Day<13 || extraTurns>0);
+        nextTest.Enabled=initialState!=null && moveStage==MoveStage.Finished && encounterResolved;
+        nextTest.Text=initialState?.Day==13 && extraTurns==0 ? "Skip Evil Attack (test only)" : "Next test turn";
         RefreshEncounterControls();
     }
     private string MovementStatus()
@@ -138,7 +141,7 @@ internal sealed partial class TerritorySetup
         var s=initialState!;
         string position=occupiedBoat.HasValue ? "Aboard boat" : cells.ContainsKey(s.Player) ? Describe(s.Player) : "Swimming";
         string dice=moveStage==MoveStage.Waiting ? "Roll movement" : $"White {whiteDie} | Red {redDie} | Remaining {remainingHalf/2.0:0.#}";
-        return $"Day {s.Day} | {position} | {dice} | {(Afflicted?(dragonbound?"Dragonbound | ":"Demon Dazed | "):"")}{moveNote}";
+        return $"Fortnight {previewFortnight+1}, Day {s.Day} | {position} | {dice} | {(Afflicted?(dragonbound?"Dragonbound | ":"Demon Dazed | "):"")}{moveNote}";
     }
     private string Describe(Hex h)=>cells.TryGetValue(h,out var c)?TileLabel(c.Tile)+" "+c.Code+" ("+c.Kind+")":"Water";
     private void StartMovement()
@@ -236,7 +239,7 @@ internal sealed partial class TerritorySetup
         else if(cells.ContainsKey(target))occupiedBoat=null;
         var previous=s.Player;
         if((animal is "Horse" or "Hound") && ((action=="Board" && animal=="Horse") || (cells.TryGetValue(target,out var animalCell) && ((TileKey(animalCell.Tile) is "Magic_1" or "Magic_6") || animalCell.Kind==Terrain.Crest)))){animal="";animalTurns=0;}
-        if(cells.TryGetValue(previous,out var previousCell) && previousCell.Kind==Terrain.Crest && !usedCrestReentry){crestReentry=true;crestDepartureDay=s.Day;}
+        if(cells.TryGetValue(previous,out var previousCell) && previousCell.Kind==Terrain.Crest && !usedCrestReentry){crestReentry=true;crestDepartureDay=AbsolutePreviewDay;}
         if(cells.TryGetValue(target,out var newCell) && newCell.Kind==Terrain.Crest && crestReentry){crestReentry=false;usedCrestReentry=true;}
         UpdateLair(previous,target);
         s.Player=target;s.PlayerLocation=Describe(target);remainingHalf-=cost;movedSteps++;
@@ -281,12 +284,28 @@ internal sealed partial class TerritorySetup
     }
     private void AdvanceTest()
     {
-        if(initialState==null || moveStage!=MoveStage.Finished || !encounterResolved || (initialState.Day>=13 && extraTurns==0))return;
-        if(deferredEffects && MessageBox.Show(this,"Some card or special effects are pending. Continue for testing only?", "Encounter preview",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
-        if(crestReentry && initialState.Day>crestDepartureDay)crestReentry=false;
+        if(initialState==null || moveStage!=MoveStage.Finished || !encounterResolved)return;
+        bool skipAttack=initialState.Day==13 && extraTurns==0;
+        if(skipAttack && MessageBox.Show(this,"Day 14 Evil Attack is not implemented. Skip its resolution and begin the next fortnight for testing only? No Evil Attack effects will be applied.", "Test-only calendar bypass",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        if(!skipAttack && deferredEffects && MessageBox.Show(this,"Some card or special effects are pending. Continue for testing only?", "Encounter preview",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+        if(crestReentry && AbsolutePreviewDay>crestDepartureDay)crestReentry=false;
         if(animalActive && animalTurns>0){animalTurns--;if(animalTurns==0)animal="";}
         animalActive=false;
-        if(extraTurns>0){extraTurns--;moveNote="Extra turn — roll movement.";}else{initialState.Day++;moveNote="Test day — roll movement.";}
+        if(extraTurns>0){extraTurns--;moveNote="Extra turn — roll movement.";}
+        else if(skipAttack)
+        {
+            initialState.Day=14;
+            Log("TEST ONLY — Evil Attack resolution skipped.");
+            if(animalTurns>0){animalTurns--;if(animalTurns==0)animal="";}
+            if(lostTurns>0)lostTurns--;
+            if(lairDeadline==14&&!dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound after remaining in the lair.");}
+            fortnightTrap=false;
+            previewFortnight++;
+            initialState.Day=1;
+            deferredEffects=true;
+            moveNote="Test fortnight — Evil Attack skipped. Roll movement.";
+        }
+        else{initialState.Day++;moveNote="Test day — roll movement.";}
         if(lairDeadline==initialState.Day && !dragonbound){dragonbound=true;lairDeadline=null;animal="";animalTurns=0;events.Clear();Log("Dragonbound after remaining in the lair.");}
         moveStage=MoveStage.Waiting;encounterResolved=false;pendingEncounter="";UpdateStatus();canvas.Invalidate();
     }
