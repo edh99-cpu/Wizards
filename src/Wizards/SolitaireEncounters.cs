@@ -24,6 +24,7 @@ internal sealed partial class TerritorySetup
     private readonly Dictionary<Hex,int> locationVisits = new();
     private string? lastTerritory;
     private bool crestReentry;
+    private int crestDepartureDay;
     private bool usedCrestReentry;
     private static readonly string[] WizardNames = { "Ishkatar","Aevarex","Elekov","Terek","Tolmitar","Veldor","Zegoral" };
 
@@ -155,6 +156,7 @@ internal sealed partial class TerritorySetup
     private void Transport(Hex destination)
     {
         var s=initialState!;var before=s.Player;
+        crestReentry=false;usedCrestReentry=false;
         s.Player=destination; s.PlayerLocation=Describe(destination); occupiedBoat=null;
         escapeTrap=false;fortnightTrap=false;lostTurns=0;forcedEncounter=false;animal="";animalTurns=0;animalActive=false;
         UpdateLair(before,destination);
@@ -319,11 +321,13 @@ internal sealed partial class TerritorySetup
         try
         {
             var s=initialState!;
-            if(revealedWizards.ContainsKey(h))ResolveRevealed(h);
+            bool metHigh=revealedWizards.ContainsKey(h);
+            if(metHigh)ResolveRevealed(h);
             if(s.Player!=h)return;
             if(cells.TryGetValue(h,out var c)&&c.Encounter.Length>0)
             {
                 string name=c.Encounter;
+                if(!(metHigh && (name is "Common town" or "Elven dwelling" or "Shrineheart Abbey" or "High Hollow" or "Star Crest")))
                 switch(name)
                 {
                     case "Common town":CommonFolk();break;
